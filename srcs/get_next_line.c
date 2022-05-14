@@ -3,112 +3,94 @@
 /*                                                        :::      ::::::::   */
 /*   get_next_line.c                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: user42 <user42@student.42.fr>              +#+  +:+       +#+        */
+/*   By: dcyprien <dcyprien@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2019/11/19 15:42:48 by dcyprien          #+#    #+#             */
-/*   Updated: 2022/01/12 00:14:20 by user42           ###   ########.fr       */
+/*   Created: 2021/08/09 00:15:03 by wleite            #+#    #+#             */
+/*   Updated: 2022/01/14 17:16:04 by dcyprien         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../includes/so_long.h"
 
-int		check_errors(int fd, char *str, char **line)
+static void	free_ptr(char **ptr)
 {
-	if (fd == -1 || line == NULL)
-	{
-		return (-1);
-	}
-	if (BUFFER_SIZE <= 0)
-		return (-1);
-	if (!str)
-	{
-		if (!(str = malloc(sizeof(char) * BUFFER_SIZE)))
-			return (-1);
-	}
-	return (1);
+	free(*ptr);
+	*ptr = NULL;
 }
 
-void	update_str(char **str, int i)
-{
-	char *tmp;
-
-	if ((*str)[i + 1])
-	{
-		tmp = ft_strdup(&((*str)[i + 1]));
-		free(*str);
-		*str = tmp;
-	}
-	else
-	{
-		free(*str);
-		*str = NULL;
-	}
-}
-
-int		join_str(char **str, char *buffer)
-{
-	char	*new;
-
-	if (*str == NULL && buffer != NULL)
-	{
-		*str = ft_strdup(buffer);
-		return (1);
-	}
-	else if (*str != NULL)
-	{
-		new = ft_strjoin(*str, buffer);
-		free(*str);
-		*str = new;
-		return (1);
-	}
-	return (0);
-}
-
-int		get_line(char **line, char **str)
+static char	*extract_line(char **buffer_backup)
 {
 	int		i;
+	char	*line;
+	char	*temp_free;
 
-	if (*str != NULL)
-	{
-		i = 0;
-		while ((*str)[i])
-		{
-			if ((*str)[i] == '\n')
-			{
-				*line = ft_substr(*str, 0, i);
-				update_str(str, i);
-				return (1);
-			}
-			i++;
-		}
-	}
-	return (0);
+	i = 0;
+	while ((*buffer_backup)[i] != '\0' && (*buffer_backup)[i] != '\n')
+		i++;
+	temp_free = *buffer_backup;
+	line = ft_substr(temp_free, 0, i + 1);
+	*buffer_backup = ft_strdup(&(*buffer_backup)[i + 1]);
+	free_ptr(&temp_free);
+	return (line);
 }
 
-int		get_next_line(int fd, char **line)
+static int	read_file(int fd, char **buffer, char **buffer_backup)
 {
-	static char	*str;
-	int			ret;
-	char		buf[BUFFER_SIZE + 1];
+	int		bytes_read;
+	char	*temp_free;
 
-	if (fd >= 0 && BUFFER_SIZE > 0 && line != NULL && !read(fd, buf, 0))
+	bytes_read = 1;
+	while (!ft_strchr(*buffer_backup, '\n') && bytes_read)
 	{
-		while ((ret = read(fd, buf, BUFFER_SIZE)))
-		{
-			buf[ret] = '\0';
-			join_str(&str, buf);
-			if (get_line(line, &str))
-				return (1);
-		}
-		if (get_line(line, &str))
-			return (1);
-		*line = str != NULL ? ft_strdup(str) : ft_strdup("");
-		if (str != NULL)
-		{
-			free(str);
-			str = NULL;
-		}
-		return (0);
+		bytes_read = read(fd, *buffer, BUFFER_SIZE);
+		if (bytes_read == -1)
+			return (bytes_read);
+		(*buffer)[bytes_read] = '\0';
+		temp_free = *buffer_backup;
+		*buffer_backup = ft_strjoin(temp_free, *buffer);
+		free_ptr(&temp_free);
 	}
-	return (-1);
+	return (bytes_read);
+}
+
+static char	*get_line(int fd, char **buffer, char **buffer_backup)
+{
+	int		bytes_read;
+	char	*temp_free;
+
+	if (ft_strchr(*buffer_backup, '\n'))
+		return (extract_line(buffer_backup));
+	bytes_read = read_file(fd, buffer, buffer_backup);
+	if ((bytes_read == 0 || bytes_read == -1) && !**buffer_backup)
+	{
+		free_ptr(buffer_backup);
+		return (NULL);
+	}
+	if (ft_strchr(*buffer_backup, '\n'))
+		return (extract_line(buffer_backup));
+	if (!ft_strchr(*buffer_backup, '\n') && **buffer_backup)
+	{
+		temp_free = ft_strdup(*buffer_backup);
+		free_ptr(buffer_backup);
+		return (temp_free);
+	}
+	return (NULL);
+}
+
+char	*get_next_line(int fd)
+{
+	static char		*buffer_backup[OPEN_MAX + 1];
+	char			*buffer;
+	char			*result;
+
+	if (fd < 0 || BUFFER_SIZE <= 0 || fd > OPEN_MAX)
+		return (NULL);
+	buffer = (char *)malloc(sizeof(char) * BUFFER_SIZE + 1);
+	if (!buffer)
+		return (NULL);
+	if (!buffer_backup[fd])
+		buffer_backup[fd] = ft_strdup("");
+	result = get_line(fd, &buffer, &buffer_backup[fd]);
+	free_ptr(&buffer);
+	return (result);
 }
